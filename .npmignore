@@ -8,3 +8,4 @@ cert.pem
 key.pem
 /release-scripts
 /dist/docker-mac-signed-bundle.tar.gz
+.vscode
