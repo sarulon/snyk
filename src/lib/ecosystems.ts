@@ -1,6 +1,10 @@
 import * as cppPlugin from 'snyk-cpp-plugin';
 import { Options } from './types';
 import { TestCommandResult } from '../cli/commands/types';
+import * as config from './config';
+import { isCI } from './is-ci';
+import * as snyk from './';
+import request = require('./request');
 
 interface Artifact {
   type: string;
@@ -9,7 +13,11 @@ interface Artifact {
 }
 
 interface ScanResult {
+  type: string;
   artifacts: Artifact[];
+  meta: {
+    [key: string]: any;
+  };
 }
 
 export interface EcosystemPlugin {
@@ -49,14 +57,53 @@ export async function testEcosystem(
     allScanResults = allScanResults.concat(scanResults);
   }
 
-  const stringifiedData = JSON.stringify(allScanResults, null, 2);
+  const testResults = await testDependencies(allScanResults);
+
+  const stringifiedData = JSON.stringify(testResults, null, 2);
   if (options.json) {
     return TestCommandResult.createJsonTestCommandResult(stringifiedData);
   }
-
-  const readableResult = await plugin.display(allScanResults);
+  const readableResult = await plugin.display(allScanResults, testResults);
   return TestCommandResult.createHumanReadableTestCommandResult(
     readableResult,
     stringifiedData,
   );
+}
+
+export async function testDependencies(
+  scanResults: ScanResult[],
+): Promise<any> {
+  const requests: any = [];
+
+  for (const scanResult of scanResults) {
+    const payload = {
+      method: 'POST',
+      url: `${config.API}/test-dependencies`,
+      json: true,
+      headers: {
+        'x-is-ci': isCI(),
+        authorization: 'token ' + snyk.api,
+      },
+      body: {
+        type: 'cpp',
+        artifacts: scanResult.artifacts,
+        meta: {},
+      },
+    };
+
+    requests.push(makeRequest(payload));
+  }
+
+  return await Promise.all(requests);
+}
+
+async function makeRequest(payload: any) {
+  return new Promise((resolve, reject) => {
+    request(payload, (error, res, body) => {
+      if (error) {
+        return reject(error);
+      }
+      resolve(body);
+    });
+  });
 }
